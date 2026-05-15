@@ -22,7 +22,7 @@ def get_settings() -> Settings:
     return Settings(
         app_name=os.getenv("KUL_APP_NAME", "Keep Up Literature"),
         api_prefix=os.getenv("KUL_API_PREFIX", "/api"),
-        database_url=os.getenv("KUL_DATABASE_URL", "sqlite:///./keep_up_literature.db"),
+        database_url=_expand_value(os.getenv("KUL_DATABASE_URL", "sqlite:///./keep_up_literature.db")),
         pubmed_email=os.getenv("KUL_PUBMED_EMAIL") or None,
         pubmed_api_key=os.getenv("KUL_PUBMED_API_KEY") or None,
         pubmed_retmax=int(os.getenv("KUL_PUBMED_RETMAX", "50")),
@@ -43,7 +43,9 @@ def _parse_cors_origins(raw_value: str | None) -> list[str]:
 
 
 def _load_dotenv() -> None:
-    candidates = [Path.cwd() / ".env", Path(__file__).resolve().parents[2] / ".env"]
+    backend_root = Path(__file__).resolve().parents[2]
+    project_root = backend_root.parent
+    candidates = [project_root / ".env", backend_root / ".env", Path.cwd() / ".env"]
     for env_path in candidates:
         if not env_path.exists():
             continue
@@ -52,4 +54,8 @@ def _load_dotenv() -> None:
             if not stripped or stripped.startswith("#") or "=" not in stripped:
                 continue
             key, value = stripped.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+            os.environ.setdefault(key.strip(), _expand_value(value.strip().strip('"').strip("'")))
+
+
+def _expand_value(value: str) -> str:
+    return os.path.expanduser(os.path.expandvars(value))

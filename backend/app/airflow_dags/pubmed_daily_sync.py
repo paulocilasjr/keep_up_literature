@@ -1,13 +1,26 @@
 from __future__ import annotations
 
-import sys
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
+
+def _load_dotenv(env_path: Path) -> None:
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        os.environ.setdefault(key.strip(), os.path.expandvars(value.strip().strip('"').strip("'")))
+
+
+_load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 BACKEND_ROOT = Path(os.getenv("KUL_BACKEND_ROOT", Path(__file__).resolve().parents[2])).resolve()
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.append(str(BACKEND_ROOT))

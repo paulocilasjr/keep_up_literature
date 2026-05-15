@@ -42,22 +42,30 @@ frontend/
 ## Backend Setup
 
 ```bash
-cd backend
+cp .env.example .env
+# Edit .env with your local path, PubMed email, and optional API key.
+set -a
+. ./.env
+set +a
+
+cd "$KUL_BACKEND_ROOT"
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
 uvicorn app.main:app --reload --port 8000
 ```
 
-The API will be available at `http://localhost:8000`. SQLite creates `backend/keep_up_literature.db` automatically on startup.
+The API will be available at `http://localhost:8000`. SQLite creates the database at `KUL_DATABASE_URL` automatically on startup.
 
-Set `KUL_PUBMED_EMAIL` in `backend/.env`. NCBI recommends identifying API clients with an email address; `KUL_PUBMED_API_KEY` is optional.
+Set `KUL_PUBMED_EMAIL` in `.env`. NCBI recommends identifying API clients with an email address; `KUL_PUBMED_API_KEY` is optional.
 
 ## Frontend Setup
 
 ```bash
-cd frontend
+set -a
+. ./.env
+set +a
+cd "$KUL_PROJECT_ROOT/frontend"
 npm install
 cp .env.example .env
 npm run dev
@@ -67,46 +75,56 @@ The UI will be available at `http://localhost:5173`.
 
 ## Airflow Setup
 
-Use an absolute database path so the API and Airflow scheduler always write to the same SQLite file:
+Use `.env` for local-only values such as paths, email addresses, and API keys. The file is ignored by git:
 
 ```bash
-cd /Users/4475918/Projects/personal/keep_up_literature
-cp backend/.env.example backend/.env
+cp .env.example .env
+set -a
+. ./.env
+set +a
 ```
 
-Edit `backend/.env`:
+Edit `.env`:
 
 ```bash
-KUL_DATABASE_URL=sqlite:////Users/4475918/Projects/personal/keep_up_literature/backend/keep_up_literature.db
+KUL_PROJECT_ROOT=/absolute/path/to/keep_up_literature
+KUL_BACKEND_ROOT=${KUL_PROJECT_ROOT}/backend
+KUL_DATABASE_URL=sqlite:///${KUL_BACKEND_ROOT}/keep_up_literature.db
 KUL_PUBMED_EMAIL=your.email@example.com
 KUL_PUBMED_API_KEY=
 KUL_PUBMED_RETMAX=50
-KUL_CORS_ORIGINS=["http://localhost:5173"]
+KUL_CORS_ORIGINS='["http://localhost:5173"]'
 ```
 
 Make the DAG visible to Airflow. A symlink is easiest because it keeps Airflow pointed at this repository version:
 
 ```bash
+set -a
+. ./.env
+set +a
 mkdir -p "$AIRFLOW_HOME/dags"
-ln -sf /Users/4475918/Projects/personal/keep_up_literature/backend/app/airflow_dags/pubmed_daily_sync.py \
+ln -sf "$KUL_BACKEND_ROOT/app/airflow_dags/pubmed_daily_sync.py" \
   "$AIRFLOW_HOME/dags/pubmed_daily_sync.py"
 ```
 
 If you prefer copying the file instead of symlinking it, set `KUL_BACKEND_ROOT` so the copied DAG can import the backend package:
 
 ```bash
-export KUL_BACKEND_ROOT=/Users/4475918/Projects/personal/keep_up_literature/backend
+set -a
+. ./.env
+set +a
 cp backend/app/airflow_dags/pubmed_daily_sync.py "$AIRFLOW_HOME/dags/"
 ```
 
 Make sure Airflow runs with the backend dependencies available. If your Airflow uses the same Python environment:
 
 ```bash
-cd /Users/4475918/Projects/personal/keep_up_literature/backend
+set -a
+. ./.env
+set +a
+cd "$KUL_BACKEND_ROOT"
 source .venv/bin/activate
 pip install -r requirements.txt
-export KUL_BACKEND_ROOT=/Users/4475918/Projects/personal/keep_up_literature/backend
-export KUL_DATABASE_URL=sqlite:////Users/4475918/Projects/personal/keep_up_literature/backend/keep_up_literature.db
 ```
 
 The DAG ID is:
@@ -124,7 +142,10 @@ Use this when you want the full project running locally every day.
 1. Start the backend API:
 
 ```bash
-cd /Users/4475918/Projects/personal/keep_up_literature/backend
+set -a
+. ./.env
+set +a
+cd "$KUL_BACKEND_ROOT"
 source .venv/bin/activate
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
@@ -132,7 +153,10 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 2. Start the frontend in another terminal:
 
 ```bash
-cd /Users/4475918/Projects/personal/keep_up_literature/frontend
+set -a
+. ./.env
+set +a
+cd "$KUL_PROJECT_ROOT/frontend"
 npm install
 npm run dev
 ```
@@ -143,8 +167,9 @@ Open `http://localhost:5173`, create research fields, and keep active fields ena
 
 ```bash
 export AIRFLOW_HOME="${AIRFLOW_HOME:-$HOME/airflow}"
-export KUL_BACKEND_ROOT=/Users/4475918/Projects/personal/keep_up_literature/backend
-export KUL_DATABASE_URL=sqlite:////Users/4475918/Projects/personal/keep_up_literature/backend/keep_up_literature.db
+set -a
+. ./.env
+set +a
 airflow scheduler
 ```
 
