@@ -10,9 +10,13 @@ class PaperRead(BaseModel):
     journal_name: str | None
     publication_date: date | None
     author_list: list[str]
+    publication_types: list[str]
     title: str
     abstract: str | None
     link: str
+    priority_score: float
+    priority_label: str
+    priority_reasons: list[str]
     is_read: bool
     created_at: datetime
 

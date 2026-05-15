@@ -24,6 +24,7 @@ def test_sync_skips_existing_and_outside_current_month(db_session) -> None:
         journal_name="Science",
         publication_date=date(2026, 5, 3),
         author_list=["Doe J"],
+        publication_types=["Journal Article"],
         title="A current month paper",
         abstract="Useful.",
         link="https://pubmed.ncbi.nlm.nih.gov/1/",
@@ -33,6 +34,7 @@ def test_sync_skips_existing_and_outside_current_month(db_session) -> None:
         journal_name="Nature",
         publication_date=date(2026, 4, 28),
         author_list=["Roe J"],
+        publication_types=["Journal Article"],
         title="An older paper",
         abstract=None,
         link="https://pubmed.ncbi.nlm.nih.gov/2/",
@@ -46,3 +48,7 @@ def test_sync_skips_existing_and_outside_current_month(db_session) -> None:
     assert first.skipped_outside_current_month == 1
     assert second.inserted == 0
     assert second.skipped_existing == 1
+
+    saved = db_session.query(field.papers[0].__class__).one()
+    assert saved.priority_score > 0
+    assert saved.priority_label in {"Medium", "High", "Must read"}

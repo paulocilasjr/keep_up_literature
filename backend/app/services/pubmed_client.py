@@ -14,6 +14,7 @@ class PubMedArticle:
     journal_name: str | None
     publication_date: date | None
     author_list: list[str]
+    publication_types: list[str]
     title: str
     abstract: str | None
     link: str
@@ -87,12 +88,14 @@ class PubMedClient:
         title = self._text(article_node, ".//ArticleTitle") or "Untitled publication"
         abstract = self._abstract(article_node)
         authors = self._authors(article_node)
+        publication_types = self._publication_types(article_node)
         publication_date = self._publication_date(article_node)
         return PubMedArticle(
             pubmed_id=pmid,
             journal_name=journal_name,
             publication_date=publication_date,
             author_list=authors,
+            publication_types=publication_types,
             title=" ".join(title.split()),
             abstract=abstract,
             link=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
@@ -122,6 +125,13 @@ class PubMedClient:
             elif last_name:
                 authors.append(last_name)
         return authors
+
+    def _publication_types(self, node: ElementTree.Element) -> list[str]:
+        return [
+            " ".join("".join(publication_type.itertext()).split())
+            for publication_type in node.findall(".//PublicationTypeList/PublicationType")
+            if "".join(publication_type.itertext()).strip()
+        ]
 
     def _publication_date(self, node: ElementTree.Element) -> date | None:
         pub_date = node.find(".//JournalIssue/PubDate")

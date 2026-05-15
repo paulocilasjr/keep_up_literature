@@ -8,6 +8,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Star,
   Trash2,
   X
 } from "lucide-react";
@@ -312,6 +313,7 @@ function PaperTable({ papers, onToggleRead, onDelete }) {
         <thead>
           <tr>
             <th>Status</th>
+            <th>Priority</th>
             <th>Publication</th>
             <th>Journal</th>
             <th>Date</th>
@@ -327,6 +329,20 @@ function PaperTable({ papers, onToggleRead, onDelete }) {
                   <Check size={16} />
                   {paper.is_read ? "Read" : "Unread"}
                 </button>
+              </td>
+              <td>
+                <div className={`priority-badge ${priorityClass(paper.priority_label)}`}>
+                  <Star size={15} />
+                  <span>{paper.priority_label}</span>
+                  <strong>{Math.round(paper.priority_score)}</strong>
+                </div>
+                {paper.priority_reasons.length > 0 && (
+                  <div className="priority-reasons">
+                    {paper.priority_reasons.slice(0, 3).map((reason) => (
+                      <span key={reason}>{reason}</span>
+                    ))}
+                  </div>
+                )}
               </td>
               <td className="paper-title">
                 <a href={paper.link} target="_blank" rel="noreferrer">{paper.title}</a>
@@ -346,6 +362,10 @@ function PaperTable({ papers, onToggleRead, onDelete }) {
       </table>
     </div>
   );
+}
+
+function priorityClass(label) {
+  return label.toLowerCase().replace(/\s+/g, "-");
 }
 
 function parseKeywords(value) {

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models.research_field import ResearchField
 from app.repositories.paper_repository import PaperRepository
 from app.repositories.research_field_repository import ResearchFieldRepository
+from app.services.priority_scorer import PaperPriorityScorer
 from app.services.pubmed_client import PubMedClient
 
 
@@ -22,6 +23,7 @@ class LiteratureSyncService:
     def __init__(self, db: Session, pubmed_client: PubMedClient) -> None:
         self.db = db
         self.pubmed_client = pubmed_client
+        self.scorer = PaperPriorityScorer()
         self.fields = ResearchFieldRepository(db)
         self.papers = PaperRepository(db)
 
@@ -47,7 +49,8 @@ class LiteratureSyncService:
             if not self.papers.is_in_current_month(article.publication_date, today=today):
                 summary.skipped_outside_current_month += 1
                 continue
-            self.papers.create_from_article(field.id, article)
+            priority = self.scorer.score(article, field, today=today)
+            self.papers.create_from_article(field.id, article, priority)
             summary.inserted += 1
 
         self.db.commit()

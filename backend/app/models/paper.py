@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -21,9 +21,13 @@ class Paper(Base):
     journal_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     publication_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     author_list: Mapped[list[str]] = mapped_column(JSON, default=list)
+    publication_types: Mapped[list[str]] = mapped_column(JSON, default=list)
     title: Mapped[str] = mapped_column(Text)
     abstract: Mapped[str | None] = mapped_column(Text, nullable=True)
     link: Mapped[str] = mapped_column(String(255))
+    priority_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    priority_label: Mapped[str] = mapped_column(String(40), default="Standard")
+    priority_reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 

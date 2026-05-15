@@ -8,6 +8,7 @@ Keep Up Literature is a local full-stack application for tracking must-read PubM
 - Generates PubMed `Title/Abstract` queries for each workspace.
 - Fetches current-month publications from NCBI PubMed E-utilities.
 - Stores journal name, publication date, authors, title, abstract, and PubMed link.
+- Scores and ranks papers by must-read priority using journal, publication type, keyword match, recency, and metadata completeness.
 - Skips papers already saved for the same workspace.
 - Lets the user mark papers as read or delete them from the queue.
 - Provides a daily Airflow DAG that reuses the same sync service as the API.
@@ -186,7 +187,20 @@ The backend is intentionally split into object-oriented layers:
 
 - `PubMedClient` owns PubMed API communication and XML parsing.
 - `LiteratureSyncService` owns sync decisions.
+- `PaperPriorityScorer` owns must-read scoring and explains ranking reasons.
 - Repository classes own database access.
 - FastAPI routers only handle HTTP concerns.
 
 This keeps the Airflow job, manual API sync, and future CLI tasks using the same business logic.
+
+## Ranking Model
+
+Each newly synced paper receives a `priority_score`, `priority_label`, and `priority_reasons`. The current scoring model is intentionally transparent and uses PubMed metadata already available during sync:
+
+- Journal signal from a curated high-impact journal list.
+- Publication type signal for randomized trials, clinical trials, reviews, meta-analyses, and guidelines.
+- Keyword density from the research field terms matched in the paper title and abstract.
+- Recency within the current month.
+- Abstract availability as a metadata completeness signal.
+
+The paper table sorts by priority first, then publication date. Citation metadata can be added later if a citation source is connected.
