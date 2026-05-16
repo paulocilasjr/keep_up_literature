@@ -25,13 +25,13 @@ BACKEND_ROOT = Path(os.getenv("KUL_BACKEND_ROOT", Path(__file__).resolve().paren
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.append(str(BACKEND_ROOT))
 
-from app.core.config import get_settings  # noqa: E402
-from app.db.session import SessionLocal, init_db  # noqa: E402
-from app.services.pubmed_client import PubMedClient  # noqa: E402
-from app.services.sync_service import LiteratureSyncService  # noqa: E402
-
 
 def sync_pubmed_publications() -> dict[str, int | None]:
+    from app.core.config import get_settings
+    from app.db.session import SessionLocal, init_db
+    from app.services.pubmed_client import PubMedClient
+    from app.services.sync_service import LiteratureSyncService
+
     settings = get_settings()
     init_db()
     db = SessionLocal()
@@ -59,7 +59,7 @@ with DAG(
     description="Fetch current-month PubMed publications for active research fields.",
     default_args=default_args,
     start_date=datetime(2026, 1, 1),
-    schedule="@daily",
+    schedule_interval="@daily",
     catchup=False,
     tags=["pubmed", "literature"],
 ) as dag:

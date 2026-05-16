@@ -188,6 +188,18 @@ Open `http://localhost:8080`, find `keep_up_literature_pubmed_daily_sync`, unpau
 airflow dags test keep_up_literature_pubmed_daily_sync 2026-05-15
 ```
 
+If Airflow reports `Broken DAG: .../pubmed_daily_sync.py`, run:
+
+```bash
+cd "$KUL_PROJECT_ROOT"
+set -a
+. ./.env
+set +a
+airflow dags list-import-errors
+```
+
+The most common causes are Airflow not seeing `KUL_BACKEND_ROOT`, or the Airflow Python environment missing the backend dependencies from `backend/requirements.txt`.
+
 6. Check the application:
 
 ```bash
