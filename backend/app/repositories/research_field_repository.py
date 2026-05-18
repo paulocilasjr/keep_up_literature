@@ -33,7 +33,11 @@ class ResearchFieldRepository:
         return counts
 
     def create(self, payload: ResearchFieldCreate) -> ResearchField:
-        query = payload.pubmed_query or PubMedQueryBuilder.build(payload.keywords)
+        query = payload.pubmed_query or PubMedQueryBuilder.build(
+            payload.keywords,
+            name=payload.name,
+            description=payload.description,
+        )
         field = ResearchField(
             name=payload.name,
             description=payload.description,
@@ -49,7 +53,11 @@ class ResearchFieldRepository:
     def update(self, field: ResearchField, payload: ResearchFieldUpdate) -> ResearchField:
         changes = payload.model_dump(exclude_unset=True)
         if "keywords" in changes and "pubmed_query" not in changes:
-            changes["pubmed_query"] = PubMedQueryBuilder.build(changes["keywords"])
+            changes["pubmed_query"] = PubMedQueryBuilder.build(
+                changes["keywords"],
+                name=changes.get("name", field.name),
+                description=changes.get("description", field.description),
+            )
         for key, value in changes.items():
             setattr(field, key, value)
         self.db.commit()

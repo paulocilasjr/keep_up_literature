@@ -31,5 +31,6 @@ class SyncResult(BaseModel):
     research_field_id: int | None = None
     fetched: int
     inserted: int
+    skipped_irrelevant: int
     skipped_existing: int
     skipped_outside_current_month: int

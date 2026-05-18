@@ -134,7 +134,14 @@ class PubMedClient:
         ]
 
     def _publication_date(self, node: ElementTree.Element) -> date | None:
-        pub_date = node.find(".//JournalIssue/PubDate")
+        for selector in (".//ArticleDate[@DateType='Electronic']", ".//ArticleDate", ".//JournalIssue/PubDate"):
+            pub_date = node.find(selector)
+            parsed = self._date_from_node(pub_date)
+            if parsed is not None:
+                return parsed
+        return None
+
+    def _date_from_node(self, pub_date: ElementTree.Element | None) -> date | None:
         if pub_date is None:
             return None
         year = self._text(pub_date, "Year")

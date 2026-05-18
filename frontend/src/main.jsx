@@ -50,13 +50,8 @@ function App() {
   }, [selectedField?.id]);
 
   const generatedQuery = useMemo(() => {
-    return parseKeywords(form.keywordsText)
-      .map((keyword) => {
-        const term = keyword.includes(" ") && !keyword.startsWith('"') ? `"${keyword}"` : keyword;
-        return `${term}[Title/Abstract]`;
-      })
-      .join(" OR ");
-  }, [form.keywordsText]);
+    return buildPubMedQuery(parseKeywords(form.keywordsText), form.name, form.description);
+  }, [form.description, form.keywordsText, form.name]);
 
   async function loadFields() {
     setLoading(true);
@@ -116,7 +111,9 @@ function App() {
     try {
       const result = await api.syncResearchField(selectedField.id);
       await Promise.all([loadFields(), loadPapers(selectedField.id)]);
-      setNotice(`Sync complete: ${result.inserted} new papers, ${result.skipped_existing} already tracked.`);
+      setNotice(
+        `Sync complete: ${result.inserted} new papers, ${result.skipped_irrelevant} off-topic, ${result.skipped_existing} already tracked.`
+      );
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -373,6 +370,160 @@ function parseKeywords(value) {
     .split(/[,\n]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+const broadSingleTerms = new Set([
+  "agent",
+  "agents",
+  "biomedical",
+  "biology",
+  "cancer",
+  "cell",
+  "cells",
+  "clinical",
+  "disease",
+  "diseases",
+  "medicine",
+  "patient",
+  "patients",
+  "research",
+  "therapy",
+  "treatment",
+  "trial",
+  "trials",
+  "tumor",
+  "tumors"
+]);
+
+const agentTerms = ["agent", "agents", "agentic", "multi-agent", "multiagent"];
+const aiContextPatterns = [
+  "agentic",
+  "artificial intelligence",
+  "benchmark",
+  "chatbot",
+  "deep learning",
+  "foundation model",
+  "large language model",
+  "llm",
+  "machine learning",
+  "multi-agent",
+  "multiagent"
+];
+const aiContextClauses = [
+  "agentic[Title/Abstract]",
+  '"artificial intelligence"[Title/Abstract]',
+  "benchmark*[Title/Abstract]",
+  "chatbot*[Title/Abstract]",
+  '"deep learning"[Title/Abstract]',
+  '"foundation model"[Title/Abstract]',
+  '"large language model"[Title/Abstract]',
+  "LLM[Title/Abstract]",
+  '"machine learning"[Title/Abstract]',
+  '"multi-agent"[Title/Abstract]',
+  "multiagent[Title/Abstract]"
+];
+const biomedicalContextClauses = [
+  "biomedical[Title/Abstract]",
+  "cancer[Title/Abstract]",
+  "clinical[Title/Abstract]",
+  "disease[Title/Abstract]",
+  "health[Title/Abstract]",
+  "healthcare[Title/Abstract]",
+  "medical[Title/Abstract]",
+  "medicine[Title/Abstract]",
+  "oncology[Title/Abstract]",
+  "patient[Title/Abstract]"
+];
+const pharmacologicAgentExclusions = [
+  '"anti-bacterial agents"[MeSH Terms]',
+  '"anti-infective agents"[Title/Abstract]',
+  '"antimicrobial agents"[Title/Abstract]',
+  '"antineoplastic agents"[Title/Abstract]',
+  '"chemotherapeutic agents"[Title/Abstract]',
+  '"therapeutic agents"[Title/Abstract]',
+  "antibacterial*[Title/Abstract]",
+  "antibiotic*[Title/Abstract]",
+  "antimicrobial*[Title/Abstract]",
+  "pharmacologic*[Title/Abstract]",
+  "pharmaceutical*[Title/Abstract]"
+];
+
+function buildPubMedQuery(keywords, name = "", description = "") {
+  const cleaned = cleanTerms(keywords);
+  const broadSingletons = [];
+  let focusClauses = [];
+
+  cleaned.forEach((keyword) => {
+    if (isBroadSingleton(keyword) && cleaned.length > 1) {
+      broadSingletons.push(titleAbstractClause(keyword));
+      return;
+    }
+    focusClauses.push(titleAbstractClause(keyword));
+  });
+
+  if (focusClauses.length === 0) {
+    focusClauses = cleaned.map((keyword) => titleAbstractClause(keyword));
+  }
+
+  let query = joinOr(focusClauses);
+  if (broadSingletons.length > 0) {
+    query = `(${query}) AND (${joinOr(broadSingletons)})`;
+  }
+
+  const context = [name, description, ...cleaned].join(" ").toLowerCase();
+  if (hasAiAgentContext(context)) {
+    query = `(${joinOr(agentClauses(cleaned))}) AND (${joinOr(aiContextClauses)}) AND (${joinOr(biomedicalContextClauses)})`;
+    query = `(${query}) NOT (${joinOr(pharmacologicAgentExclusions)})`;
+  }
+
+  return query;
+}
+
+function cleanTerms(keywords) {
+  const seen = new Set();
+  const cleaned = [];
+  keywords.forEach((keyword) => {
+    const normalized = keyword.trim().replace(/\s+/g, " ");
+    const key = normalized.toLowerCase();
+    if (!normalized || seen.has(key)) return;
+    seen.add(key);
+    cleaned.push(normalized);
+  });
+  return cleaned;
+}
+
+function isBroadSingleton(keyword) {
+  return !keyword.trim().includes(" ") && broadSingleTerms.has(keyword.toLowerCase());
+}
+
+function hasAiAgentContext(context) {
+  const hasAgentTerm = agentTerms.some((term) => new RegExp(`\\b${escapeRegExp(term)}s?\\b`).test(context));
+  const hasAiContext = aiContextPatterns.some((pattern) => context.includes(pattern));
+  return hasAgentTerm && hasAiContext;
+}
+
+function titleAbstractClause(keyword) {
+  let normalized = keyword.trim();
+  if (normalized.includes(" ") && !(normalized.startsWith('"') && normalized.endsWith('"'))) {
+    normalized = `"${normalized}"`;
+  }
+  return `${normalized}[Title/Abstract]`;
+}
+
+function agentClauses(keywords) {
+  const clauses = keywords
+    .filter((keyword) => agentTerms.some((term) => new RegExp(`\\b${escapeRegExp(term)}s?\\b`).test(keyword.toLowerCase())))
+    .map((keyword) => titleAbstractClause(keyword));
+  clauses.push("agent*[Title/Abstract]");
+  return Array.from(new Set(clauses));
+}
+
+function joinOr(clauses) {
+  return clauses.join(" OR ");
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 createRoot(document.getElementById("root")).render(<App />);
