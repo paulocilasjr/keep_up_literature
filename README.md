@@ -1,15 +1,16 @@
 # Keep Up Literature
 
-Keep Up Literature is a local full-stack application for tracking must-read PubMed papers by research field. A user creates research workspaces from keywords or context, the backend turns those inputs into PubMed queries, and a daily Airflow DAG syncs current-month publications into a database.
+Keep Up Literature is a local full-stack application for tracking must-read PubMed papers by research field. A user creates research workspaces from keywords or context, the backend turns those inputs into PubMed queries, and a daily Airflow DAG syncs same-day publications into a database.
 
 ## What It Does
 
 - Creates research-field workspaces from keywords, context, and an optional description.
 - Generates PubMed `Title/Abstract` queries for each workspace.
-- Fetches current-month publications from NCBI PubMed E-utilities.
+- Fetches same-day publications from NCBI PubMed E-utilities.
 - Stores journal name, publication date, authors, title, abstract, and PubMed link.
 - Scores and ranks papers by must-read priority using journal, publication type, keyword match, recency, and metadata completeness.
 - Skips papers already saved for the same workspace.
+- Remembers deleted papers per workspace so later syncs do not bring them back.
 - Lets the user mark papers as read or delete them from the queue.
 - Provides a daily Airflow DAG that reuses the same sync service as the API.
 
@@ -133,7 +134,7 @@ The DAG ID is:
 keep_up_literature_pubmed_daily_sync
 ```
 
-It runs daily, checks active research fields, queries PubMed for current-month papers, skips existing records, and inserts new publications.
+It runs daily, checks active research fields, queries PubMed for same-day papers, skips existing or previously deleted records, and inserts new publications.
 
 ## Daily Local Runbook
 
@@ -237,7 +238,7 @@ Each newly synced paper receives a `priority_score`, `priority_label`, and `prio
 - Journal signal from a curated high-impact journal list.
 - Publication type signal for randomized trials, clinical trials, reviews, meta-analyses, and guidelines.
 - Keyword density from the research field terms matched in the paper title and abstract.
-- Recency within the current month.
+- Recency of same-day publications.
 - Abstract availability as a metadata completeness signal.
 
 The paper table sorts by priority first, then publication date. Citation metadata can be added later if a citation source is connected.

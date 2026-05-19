@@ -112,7 +112,7 @@ function App() {
       const result = await api.syncResearchField(selectedField.id);
       await Promise.all([loadFields(), loadPapers(selectedField.id)]);
       setNotice(
-        `Sync complete: ${result.inserted} new papers, ${result.skipped_irrelevant} off-topic, ${result.skipped_existing} already tracked.`
+        `Sync complete: ${result.inserted} new papers, ${result.skipped_irrelevant} off-topic, ${result.skipped_existing} already tracked, ${result.skipped_deleted} previously deleted.`
       );
     } catch (requestError) {
       setError(requestError.message);
@@ -291,7 +291,7 @@ function App() {
               <div className="empty-state tall">
                 <BookOpenCheck size={36} />
                 <h3>No papers saved yet</h3>
-                <p>Run a PubMed sync, or wait for Airflow to populate the current month queue.</p>
+                <p>Run a PubMed sync, or wait for Airflow to populate today's queue.</p>
               </div>
             ) : (
               <PaperTable papers={papers} onToggleRead={toggleRead} onDelete={deletePaper} />

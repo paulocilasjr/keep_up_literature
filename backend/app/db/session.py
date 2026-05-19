@@ -25,7 +25,7 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    from app.models import paper, research_field  # noqa: F401
+    from app.models import deleted_paper, paper, research_field  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_columns()

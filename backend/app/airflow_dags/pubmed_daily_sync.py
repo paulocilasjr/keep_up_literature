@@ -56,7 +56,7 @@ default_args = {
 
 with DAG(
     dag_id="keep_up_literature_pubmed_daily_sync",
-    description="Fetch current-month PubMed publications for active research fields.",
+    description="Fetch today's PubMed publications for active research fields.",
     default_args=default_args,
     start_date=datetime(2026, 1, 1),
     schedule_interval="@daily",

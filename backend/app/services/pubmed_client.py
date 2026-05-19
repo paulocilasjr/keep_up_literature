@@ -44,6 +44,14 @@ class PubMedClient:
             return []
         return self._fetch_articles(ids)
 
+    def search_current_day(self, query: str, today: date | None = None) -> list[PubMedArticle]:
+        today = today or date.today()
+        dated_query = f'({query}) AND ("{today:%Y/%m/%d}"[Date - Publication] : "{today:%Y/%m/%d}"[Date - Publication])'
+        ids = self._search_ids(dated_query)
+        if not ids:
+            return []
+        return self._fetch_articles(ids)
+
     def _base_params(self) -> dict[str, str]:
         params: dict[str, str] = {}
         if self.email:

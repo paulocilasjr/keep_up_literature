@@ -18,7 +18,8 @@ class SyncSummary:
     inserted: int = 0
     skipped_irrelevant: int = 0
     skipped_existing: int = 0
-    skipped_outside_current_month: int = 0
+    skipped_deleted: int = 0
+    skipped_outside_current_day: int = 0
 
 
 class LiteratureSyncService:
@@ -38,23 +39,27 @@ class LiteratureSyncService:
             total.inserted += summary.inserted
             total.skipped_irrelevant += summary.skipped_irrelevant
             total.skipped_existing += summary.skipped_existing
-            total.skipped_outside_current_month += summary.skipped_outside_current_month
+            total.skipped_deleted += summary.skipped_deleted
+            total.skipped_outside_current_day += summary.skipped_outside_current_day
         return total
 
     def sync_field(self, field: ResearchField, today: date | None = None) -> SyncSummary:
         today = today or date.today()
-        articles = self.pubmed_client.search_current_month(field.pubmed_query, today=today)
+        articles = self.pubmed_client.search_current_day(field.pubmed_query, today=today)
         summary = SyncSummary(research_field_id=field.id, fetched=len(articles))
 
         for article in articles:
-            if not self.papers.is_in_current_month(article.publication_date, today=today):
-                summary.skipped_outside_current_month += 1
-                continue
-            if not self.relevance_filter.is_relevant(article, field):
-                summary.skipped_irrelevant += 1
+            if not self.papers.is_from_today(article.publication_date, today=today):
+                summary.skipped_outside_current_day += 1
                 continue
             if self.papers.exists(field.id, article.pubmed_id):
                 summary.skipped_existing += 1
+                continue
+            if self.papers.was_deleted(field.id, article.pubmed_id):
+                summary.skipped_deleted += 1
+                continue
+            if not self.relevance_filter.is_relevant(article, field):
+                summary.skipped_irrelevant += 1
                 continue
             priority = self.scorer.score(article, field, today=today)
             self.papers.create_from_article(field.id, article, priority)

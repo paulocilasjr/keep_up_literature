@@ -33,4 +33,5 @@ class SyncResult(BaseModel):
     inserted: int
     skipped_irrelevant: int
     skipped_existing: int
-    skipped_outside_current_month: int
+    skipped_deleted: int
+    skipped_outside_current_day: int

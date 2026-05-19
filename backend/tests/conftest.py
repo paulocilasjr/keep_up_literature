@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.session import Base
-from app.models import Paper, ResearchField  # noqa: F401
+from app.models import DeletedPaper, Paper, ResearchField  # noqa: F401
 
 
 @pytest.fixture
