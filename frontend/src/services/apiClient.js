@@ -31,18 +31,24 @@ class LiteratureApi {
     return this.#request(`/api/research-fields/${id}`, { method: "DELETE" });
   }
 
-  async listPapers(fieldId) {
-    return this.#request(`/api/research-fields/${fieldId}/papers`);
+  async listPapers(fieldId, filters = {}) {
+    const params = new URLSearchParams();
+    if (filters.status) params.set("status", filters.status);
+    if (filters.starred) params.set("starred", "true");
+    if (filters.search?.trim()) params.set("search", filters.search.trim());
+    const query = params.toString();
+    return this.#request(`/api/research-fields/${fieldId}/papers${query ? `?${query}` : ""}`);
   }
 
-  async syncResearchField(fieldId) {
-    return this.#request(`/api/research-fields/${fieldId}/sync`, { method: "POST" });
+  async syncResearchField(fieldId, lookbackDays = null) {
+    const query = lookbackDays ? `?lookback_days=${lookbackDays}` : "";
+    return this.#request(`/api/research-fields/${fieldId}/sync${query}`, { method: "POST" });
   }
 
-  async updatePaperStatus(paperId, isRead) {
+  async updatePaper(paperId, changes) {
     return this.#request(`/api/papers/${paperId}`, {
       method: "PATCH",
-      body: JSON.stringify({ is_read: isRead })
+      body: JSON.stringify(changes)
     });
   }
 

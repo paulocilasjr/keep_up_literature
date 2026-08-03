@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_pubmed_client
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.repositories.paper_repository import PaperRepository
 from app.repositories.research_field_repository import ResearchFieldRepository
@@ -81,16 +84,32 @@ def delete_research_field(field_id: int, db: Session = Depends(get_db)) -> None:
 
 
 @router.get("/{field_id}/papers", response_model=list[PaperRead])
-def list_papers(field_id: int, db: Session = Depends(get_db)) -> list[PaperRead]:
+def list_papers(
+    field_id: int,
+    paper_status: Literal["queue", "unread", "read", "archived", "all"] = Query("queue", alias="status"),
+    starred: bool = False,
+    search: str | None = Query(default=None, max_length=300),
+    db: Session = Depends(get_db),
+) -> list[PaperRead]:
     fields = ResearchFieldRepository(db)
     if fields.get(field_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research field not found.")
-    return PaperRepository(db).list_for_field(field_id)
+    return PaperRepository(db).list_for_field(field_id, status=paper_status, starred=starred, search=search)
+
+
+@router.get("/{field_id}/discarded-papers", response_model=list[PaperRead], include_in_schema=False)
+def list_discarded_papers(field_id: int, db: Session = Depends(get_db)) -> list[PaperRead]:
+    """Audit endpoint; discarded papers intentionally remain absent from the normal interface."""
+    fields = ResearchFieldRepository(db)
+    if fields.get(field_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research field not found.")
+    return PaperRepository(db).list_discarded_for_field(field_id)
 
 
 @router.post("/{field_id}/sync", response_model=SyncResult)
 def sync_research_field(
     field_id: int,
+    lookback_days: int | None = Query(default=None, ge=1, le=365),
     db: Session = Depends(get_db),
     pubmed_client: PubMedClient = Depends(get_pubmed_client),
 ) -> SyncResult:
@@ -98,5 +117,19 @@ def sync_research_field(
     field = fields.get(field_id)
     if field is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research field not found.")
-    summary = LiteratureSyncService(db, pubmed_client).sync_field(field)
+    settings = get_settings()
+    service = LiteratureSyncService(
+        db,
+        pubmed_client,
+        initial_lookback_days=settings.initial_sync_days,
+        max_catchup_days=settings.max_catchup_days,
+    )
+    try:
+        summary = service.sync_field(field, lookback_days=lookback_days)
+    except Exception as exc:
+        db.rollback()
+        current_field = fields.get(field_id)
+        if current_field is not None:
+            fields.record_sync_failure(current_field, str(exc))
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"PubMed sync failed: {exc}") from exc
     return SyncResult(**summary.__dict__)

@@ -38,15 +38,16 @@ class PubMedClient:
     def search_current_month(self, query: str, today: date | None = None) -> list[PubMedArticle]:
         today = today or date.today()
         start = today.replace(day=1)
-        dated_query = f'({query}) AND ("{start:%Y/%m/%d}"[Date - Publication] : "{today:%Y/%m/%d}"[Date - Publication])'
-        ids = self._search_ids(dated_query)
-        if not ids:
-            return []
-        return self._fetch_articles(ids)
+        return self.search_date_range(query, start=start, end=today)
 
     def search_current_day(self, query: str, today: date | None = None) -> list[PubMedArticle]:
         today = today or date.today()
-        dated_query = f'({query}) AND ("{today:%Y/%m/%d}"[Date - Publication] : "{today:%Y/%m/%d}"[Date - Publication])'
+        return self.search_date_range(query, start=today, end=today)
+
+    def search_date_range(self, query: str, start: date, end: date) -> list[PubMedArticle]:
+        if start > end:
+            raise ValueError("PubMed search start date must not be after the end date.")
+        dated_query = f'({query}) AND ("{start:%Y/%m/%d}"[Date - Publication] : "{end:%Y/%m/%d}"[Date - Publication])'
         ids = self._search_ids(dated_query)
         if not ids:
             return []

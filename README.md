@@ -1,244 +1,125 @@
 # Keep Up Literature
 
-Keep Up Literature is a local full-stack application for tracking must-read PubMed papers by research field. A user creates research workspaces from keywords or context, the backend turns those inputs into PubMed queries, and a daily Airflow DAG syncs same-day publications into a database.
+Keep Up Literature is a local, durable PubMed reading workspace. It builds focused searches for each research area, catches up on publications missed while the app was stopped, ranks useful papers, and keeps your reading decisions and notes in a persistent SQLite database.
 
-## What It Does
+## Start everything with one command
 
-- Creates research-field workspaces from keywords, context, and an optional description.
-- Generates PubMed `Title/Abstract` queries for each workspace.
-- Fetches same-day publications from NCBI PubMed E-utilities.
-- Stores journal name, publication date, authors, title, abstract, and PubMed link.
-- Scores and ranks papers by must-read priority using journal, publication type, keyword match, recency, and metadata completeness.
-- Skips papers already saved for the same workspace.
-- Remembers deleted papers per workspace so later syncs do not bring them back.
-- Lets the user mark papers as read or delete them from the queue.
-- Provides a daily Airflow DAG that reuses the same sync service as the API.
+```bash
+./keep-up-literature
+```
 
-## Stack
+On the first run, the launcher installs missing dependencies and builds the interface. It then starts one local server and automatically opens `http://127.0.0.1:8000` in your browser.
 
-- Backend: FastAPI, SQLAlchemy, SQLite by default, Pydantic, httpx.
-- Frontend: React, Vite, lucide-react.
-- Scheduler: Apache Airflow DAG in `backend/app/airflow_dags/pubmed_daily_sync.py`.
+The one process includes:
 
-## Project Layout
+- The React interface and FastAPI backend.
+- A persistent SQLite literature library.
+- A lightweight automatic PubMed scheduler.
+- Catch-up sync from the last successful date after any shutdown.
+
+Stop it with `Ctrl-C`. Start it again with the same command; workspaces, papers, read/archive state, stars, notes, sync cursors, filters, and unfinished workspace drafts are restored.
+
+Deleting a paper is a durable discard, not destructive data loss. The paper disappears from every normal interface view, search, count, and export, but its complete metadata and annotations remain in SQLite with a discard timestamp. A separate PubMed-ID tombstone ensures later syncs can never import it again.
+
+Useful launcher options:
+
+```bash
+./keep-up-literature --no-open     # start without opening a browser
+./keep-up-literature --no-sync     # disable background sync for this run
+./keep-up-literature --reload      # backend development mode
+./keep-up-literature --port 8100   # use another port
+```
+
+`make start` is an equivalent entry point.
+
+## Everyday workflow
+
+1. Create a workspace from a name, focused terms, and optional research context.
+2. Run **Sync PubMed**. A new workspace collects the last 30 days by default.
+3. The app ranks results using journal, study type, keyword density, recency, and metadata quality.
+4. Star must-keep papers, mark papers read, add durable research notes, or archive completed items.
+5. Search across titles, abstracts, journals, and your notes. Export the current view to CSV when needed.
+
+Active workspaces sync every six hours while the app is running. When it is not running, no background process is required: the next launch uses each workspace's saved cursor to catch up. The catch-up window is bounded to 90 days by default to keep PubMed requests manageable.
+
+## Persistence
+
+The source of truth is SQLite. New installations default to:
 
 ```text
-backend/
-  app/
-    api/             FastAPI routers
-    core/            Settings
-    db/              SQLAlchemy engine/session
-    models/          ORM models
-    repositories/    Database access objects
-    schemas/         API contracts
-    services/        PubMed client, query builder, sync service
-    airflow_dags/    Daily Airflow DAG
-  tests/
-frontend/
-  src/
-    services/        API client class
-    styles/          App CSS
+data/keep_up_literature.db
 ```
 
-## Backend Setup
+The database is ignored by Git. SQLite foreign keys, write-ahead logging, and a busy timeout are enabled for safer local operation. Existing installations that set `KUL_DATABASE_URL` continue using that location and are migrated in place without deleting saved rows.
+
+Browser-only working context—the selected workspace, current filters, and a not-yet-submitted workspace draft—is stored in local storage. All research data and paper annotations are stored in SQLite.
+
+Back up the library by copying the database file while the app is stopped. If `-wal` and `-shm` files exist beside it, copy those as well or use SQLite's backup command.
+
+## Configuration
+
+Copy the example and edit local values:
 
 ```bash
 cp .env.example .env
-# Edit .env with your local path, PubMed email, and optional API key.
-set -a
-. ./.env
-set +a
-
-cd "$KUL_BACKEND_ROOT"
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
 ```
 
-The API will be available at `http://localhost:8000`. SQLite creates the database at `KUL_DATABASE_URL` automatically on startup.
+Important settings:
 
-Set `KUL_PUBMED_EMAIL` in `.env`. NCBI recommends identifying API clients with an email address; `KUL_PUBMED_API_KEY` is optional.
-
-## Frontend Setup
-
-```bash
-set -a
-. ./.env
-set +a
-cd "$KUL_PROJECT_ROOT/frontend"
-npm install
-cp .env.example .env
-npm run dev
-```
-
-The UI will be available at `http://localhost:5173`.
-
-## Airflow Setup
-
-Use `.env` for local-only values such as paths, email addresses, and API keys. The file is ignored by git:
-
-```bash
-cp .env.example .env
-set -a
-. ./.env
-set +a
-```
-
-Edit `.env`:
-
-```bash
-KUL_PROJECT_ROOT=/absolute/path/to/keep_up_literature
-KUL_BACKEND_ROOT=${KUL_PROJECT_ROOT}/backend
-KUL_DATABASE_URL=sqlite:///${KUL_BACKEND_ROOT}/keep_up_literature.db
-KUL_PUBMED_EMAIL=your.email@example.com
+```dotenv
+KUL_DATABASE_URL=sqlite:////absolute/path/to/data/keep_up_literature.db
+KUL_PUBMED_EMAIL=you@example.com
 KUL_PUBMED_API_KEY=
 KUL_PUBMED_RETMAX=50
-KUL_CORS_ORIGINS='["http://localhost:5173"]'
+KUL_INITIAL_SYNC_DAYS=30
+KUL_MAX_CATCHUP_DAYS=90
+KUL_AUTO_SYNC_ENABLED=true
+KUL_AUTO_SYNC_INTERVAL_MINUTES=360
+KUL_AUTO_SYNC_INITIAL_DELAY_SECONDS=20
 ```
 
-Make the DAG visible to Airflow. A symlink is easiest because it keeps Airflow pointed at this repository version:
+NCBI recommends identifying E-utilities clients with an email. An API key is optional.
 
-```bash
-set -a
-. ./.env
-set +a
-mkdir -p "$AIRFLOW_HOME/dags"
-ln -sf "$KUL_BACKEND_ROOT/app/airflow_dags/pubmed_daily_sync.py" \
-  "$AIRFLOW_HOME/dags/pubmed_daily_sync.py"
-```
-
-If you prefer copying the file instead of symlinking it, set `KUL_BACKEND_ROOT` so the copied DAG can import the backend package:
-
-```bash
-set -a
-. ./.env
-set +a
-cp backend/app/airflow_dags/pubmed_daily_sync.py "$AIRFLOW_HOME/dags/"
-```
-
-Make sure Airflow runs with the backend dependencies available. If your Airflow uses the same Python environment:
-
-```bash
-set -a
-. ./.env
-set +a
-cd "$KUL_BACKEND_ROOT"
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-The DAG ID is:
+## Architecture
 
 ```text
-keep_up_literature_pubmed_daily_sync
+backend/app/
+  api/             FastAPI routes
+  db/              SQLite engine, sessions, and additive migrations
+  models/          Workspaces, papers, and deletion tombstones
+  repositories/    Persistent queries and updates
+  services/        PubMed, ranking, relevance, catch-up sync, scheduler
+frontend/src/       React reading and triage interface
+keep-up-literature  One-command production launcher
 ```
 
-It runs daily, checks active research fields, queries PubMed for same-day papers, skips existing or previously deleted records, and inserts new publications.
+The automatic scheduler and manual API sync use the same `LiteratureSyncService`, so deduplication, deletion tombstones, relevance checks, priority scoring, and cursor updates behave consistently.
 
-## Daily Local Runbook
+## Development and tests
 
-Use this when you want the full project running locally every day.
-
-1. Start the backend API:
+Run the backend tests and production frontend build:
 
 ```bash
-set -a
-. ./.env
-set +a
-cd "$KUL_BACKEND_ROOT"
-source .venv/bin/activate
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+make test
+make build
 ```
 
-2. Start the frontend in another terminal:
+Separate development servers are still available when needed:
 
 ```bash
-set -a
-. ./.env
-set +a
-cd "$KUL_PROJECT_ROOT/frontend"
-npm install
-npm run dev
+make backend
+make frontend
 ```
 
-Open `http://localhost:5173`, create research fields, and keep active fields enabled for daily sync.
+The legacy Airflow DAG remains in `backend/app/airflow_dags/pubmed_daily_sync.py` for deployments already using Airflow. Normal local operation does not require Airflow.
 
-3. Start Airflow in another terminal if it is not already running:
-
-```bash
-export AIRFLOW_HOME="${AIRFLOW_HOME:-$HOME/airflow}"
-set -a
-. ./.env
-set +a
-airflow scheduler
-```
-
-4. Start the Airflow webserver in another terminal if needed:
-
-```bash
-export AIRFLOW_HOME="${AIRFLOW_HOME:-$HOME/airflow}"
-airflow webserver --port 8080
-```
-
-Open `http://localhost:8080`, find `keep_up_literature_pubmed_daily_sync`, unpause it, and confirm the schedule is daily.
-
-5. Test the DAG manually:
-
-```bash
-airflow dags test keep_up_literature_pubmed_daily_sync 2026-05-15
-```
-
-If Airflow reports `Broken DAG: .../pubmed_daily_sync.py`, run:
-
-```bash
-cd "$KUL_PROJECT_ROOT"
-set -a
-. ./.env
-set +a
-airflow dags list-import-errors
-```
-
-The most common causes are Airflow not seeing `KUL_BACKEND_ROOT`, or the Airflow Python environment missing the backend dependencies from `backend/requirements.txt`.
-
-6. Check the application:
-
-```bash
-curl -sS http://127.0.0.1:8000/health
-curl -sS http://127.0.0.1:8000/api/research-fields
-```
-
-The backend and Airflow share the same database through `KUL_DATABASE_URL`. The frontend reads from the backend, so new papers added by the daily DAG appear in the relevant research-field workspace.
-
-## API Highlights
+## API highlights
 
 - `GET /api/research-fields`
 - `POST /api/research-fields`
-- `GET /api/research-fields/{field_id}/papers`
+- `PATCH /api/research-fields/{field_id}`
+- `GET /api/research-fields/{field_id}/papers?status=queue&starred=false&search=...`
 - `POST /api/research-fields/{field_id}/sync`
 - `PATCH /api/papers/{paper_id}`
 - `DELETE /api/papers/{paper_id}`
-
-## Development Notes
-
-The backend is intentionally split into object-oriented layers:
-
-- `PubMedClient` owns PubMed API communication and XML parsing.
-- `LiteratureSyncService` owns sync decisions.
-- `PaperPriorityScorer` owns must-read scoring and explains ranking reasons.
-- Repository classes own database access.
-- FastAPI routers only handle HTTP concerns.
-
-This keeps the Airflow job, manual API sync, and future CLI tasks using the same business logic.
-
-## Ranking Model
-
-Each newly synced paper receives a `priority_score`, `priority_label`, and `priority_reasons`. The current scoring model is intentionally transparent and uses PubMed metadata already available during sync:
-
-- Journal signal from a curated high-impact journal list.
-- Publication type signal for randomized trials, clinical trials, reviews, meta-analyses, and guidelines.
-- Keyword density from the research field terms matched in the paper title and abstract.
-- Recency of same-day publications.
-- Abstract availability as a metadata completeness signal.
-
-The paper table sorts by priority first, then publication date. Citation metadata can be added later if a citation source is connected.
+- `GET /docs`
