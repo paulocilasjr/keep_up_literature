@@ -29,6 +29,11 @@ class Paper(Base):
     priority_label: Mapped[str] = mapped_column(String(40), default="Standard")
     priority_reasons: Mapped[list[str]] = mapped_column(JSON, default=list)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_starred: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    discarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     research_field = relationship("ResearchField", back_populates="papers")

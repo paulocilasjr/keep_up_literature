@@ -50,6 +50,9 @@ class ResearchFieldRead(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    last_synced_at: datetime | None = None
+    last_sync_status: str | None = None
+    last_sync_error: str | None = None
     unread_count: int = 0
     paper_count: int = 0
 

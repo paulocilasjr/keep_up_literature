@@ -41,7 +41,12 @@ def sync_pubmed_publications() -> dict[str, int | None]:
             api_key=settings.pubmed_api_key,
             retmax=settings.pubmed_retmax,
         )
-        summary = LiteratureSyncService(db, client).sync_all_active_fields()
+        summary = LiteratureSyncService(
+            db,
+            client,
+            initial_lookback_days=settings.initial_sync_days,
+            max_catchup_days=settings.max_catchup_days,
+        ).sync_all_active_fields()
         return summary.__dict__
     finally:
         db.close()
@@ -56,7 +61,7 @@ default_args = {
 
 with DAG(
     dag_id="keep_up_literature_pubmed_daily_sync",
-    description="Fetch today's PubMed publications for active research fields.",
+    description="Catch up PubMed publications for active research fields.",
     default_args=default_args,
     start_date=datetime(2026, 1, 1),
     schedule_interval="@daily",

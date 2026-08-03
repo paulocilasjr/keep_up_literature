@@ -1,6 +1,7 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from app.models.deleted_paper import DeletedPaper
+from app.models.paper import Paper
 from app.models.research_field import ResearchField
 from app.repositories.paper_repository import PaperRepository
 from app.services.pubmed_client import PubMedArticle
@@ -15,6 +16,16 @@ class FakePubMedClient:
         return self.articles
 
     def search_current_month(self, query: str, today: date | None = None) -> list[PubMedArticle]:
+        return self.articles
+
+
+class DateRangePubMedClient(FakePubMedClient):
+    def __init__(self, articles: list[PubMedArticle]) -> None:
+        super().__init__(articles)
+        self.ranges: list[tuple[date, date]] = []
+
+    def search_date_range(self, query: str, start: date, end: date) -> list[PubMedArticle]:
+        self.ranges.append((start, end))
         return self.articles
 
 
@@ -180,8 +191,74 @@ def test_deleting_paper_records_pubmed_id_tombstone(db_session) -> None:
     service = LiteratureSyncService(db_session, FakePubMedClient([article]))
     service.sync_field(field, today=date(2026, 5, 15))
 
-    paper = PaperRepository(db_session).list_for_field(field.id)[0]
-    PaperRepository(db_session).delete(paper)
+    repository = PaperRepository(db_session)
+    paper = repository.list_for_field(field.id)[0]
+    repository.update(paper, {"is_starred": True, "notes": "Discarded after full-text review."})
+    paper_id = paper.id
+    repository.delete(paper)
 
-    assert PaperRepository(db_session).list_for_field(field.id) == []
-    assert PaperRepository(db_session).was_deleted(field.id, "7")
+    assert repository.list_for_field(field.id, status="all") == []
+    assert repository.was_deleted(field.id, "7")
+    discarded = db_session.get(Paper, paper_id)
+    assert discarded is not None
+    assert discarded.pubmed_id == "7"
+    assert discarded.title == "A same-day T cells paper"
+    assert discarded.abstract == "Useful T cells result."
+    assert discarded.is_starred is True
+    assert discarded.notes == "Discarded after full-text review."
+    assert discarded.discarded_at is not None
+    assert repository.list_discarded_for_field(field.id) == [discarded]
+
+    summary = service.sync_field(field, today=date(2026, 5, 15))
+    assert summary.inserted == 0
+    assert summary.skipped_deleted == 1
+    assert repository.list_for_field(field.id, status="all") == []
+
+
+def test_sync_catches_up_from_last_persisted_sync_date(db_session) -> None:
+    field = ResearchField(
+        name="Spatial biology",
+        keywords=["spatial transcriptomics"],
+        pubmed_query='"spatial transcriptomics"[Title/Abstract]',
+        last_synced_at=datetime(2026, 5, 13, 20, 0, tzinfo=timezone.utc),
+    )
+    db_session.add(field)
+    db_session.commit()
+
+    missed_article = PubMedArticle(
+        pubmed_id="8",
+        journal_name="Nature Methods",
+        publication_date=date(2026, 5, 14),
+        author_list=["Doe J"],
+        publication_types=["Journal Article"],
+        title="Spatial transcriptomics maps a tissue niche",
+        abstract="A spatial transcriptomics atlas.",
+        link="https://pubmed.ncbi.nlm.nih.gov/8/",
+    )
+    client = DateRangePubMedClient([missed_article])
+
+    summary = LiteratureSyncService(db_session, client).sync_field(field, today=date(2026, 5, 15))
+
+    assert client.ranges == [(date(2026, 5, 13), date(2026, 5, 15))]
+    assert summary.inserted == 1
+    assert field.last_synced_at.date() == date(2026, 5, 15)
+    assert field.last_sync_status == "success"
+
+
+def test_first_sync_uses_configured_backlog_window(db_session) -> None:
+    field = ResearchField(
+        name="Organoids",
+        keywords=["organoid"],
+        pubmed_query="organoid[Title/Abstract]",
+    )
+    db_session.add(field)
+    db_session.commit()
+    client = DateRangePubMedClient([])
+
+    summary = LiteratureSyncService(db_session, client, initial_lookback_days=30).sync_field(
+        field,
+        today=date(2026, 5, 30),
+    )
+
+    assert client.ranges == [(date(2026, 5, 1), date(2026, 5, 30))]
+    assert summary.sync_from == date(2026, 5, 1)

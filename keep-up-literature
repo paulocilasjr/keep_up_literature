@@ -1,0 +1,116 @@
+#!/usr/bin/env sh
+set -eu
+
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+BACKEND_ROOT="$PROJECT_ROOT/backend"
+FRONTEND_ROOT="$PROJECT_ROOT/frontend"
+HOST="127.0.0.1"
+PORT="8000"
+OPEN_BROWSER="yes"
+RELOAD="no"
+DISABLE_SYNC="no"
+
+usage() {
+  printf '%s\n' \
+    "Usage: ./keep-up-literature [options]" \
+    "" \
+    "Builds and starts the complete local literature workspace, including" \
+    "the API, interface, persistent database, and automatic PubMed sync." \
+    "" \
+    "Options:" \
+    "  --no-open       Do not open the interface in a browser" \
+    "  --no-sync       Disable background PubMed sync for this run" \
+    "  --reload        Reload the backend when Python files change" \
+    "  --host HOST     Bind host (default: 127.0.0.1)" \
+    "  --port PORT     Bind port (default: 8000)" \
+    "  -h, --help      Show this help"
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --no-open) OPEN_BROWSER="no" ;;
+    --no-sync) DISABLE_SYNC="yes" ;;
+    --reload) RELOAD="yes" ;;
+    --host)
+      [ "$#" -ge 2 ] || { printf '%s\n' "--host requires a value" >&2; exit 2; }
+      HOST="$2"
+      shift
+      ;;
+    --port)
+      [ "$#" -ge 2 ] || { printf '%s\n' "--port requires a value" >&2; exit 2; }
+      PORT="$2"
+      shift
+      ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+if [ -f "$PROJECT_ROOT/.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$PROJECT_ROOT/.env"
+  set +a
+fi
+
+if [ "$DISABLE_SYNC" = "yes" ]; then
+  export KUL_AUTO_SYNC_ENABLED="false"
+fi
+
+if [ ! -x "$BACKEND_ROOT/.venv/bin/python" ]; then
+  printf '%s\n' "Creating the backend environment…"
+  python3 -m venv "$BACKEND_ROOT/.venv"
+fi
+
+if ! "$BACKEND_ROOT/.venv/bin/python" -c "import fastapi, uvicorn, sqlalchemy, pydantic, httpx" >/dev/null 2>&1; then
+  printf '%s\n' "Installing backend dependencies…"
+  "$BACKEND_ROOT/.venv/bin/python" -m pip install -r "$BACKEND_ROOT/requirements.txt"
+fi
+
+if ! command -v npm >/dev/null 2>&1; then
+  printf '%s\n' "npm was not found. Install Node.js and run this command again." >&2
+  exit 1
+fi
+
+if [ ! -d "$FRONTEND_ROOT/node_modules" ]; then
+  printf '%s\n' "Installing interface dependencies…"
+  (cd "$FRONTEND_ROOT" && npm install)
+fi
+
+printf '%s\n' "Building the interface…"
+(cd "$FRONTEND_ROOT" && VITE_API_BASE_URL="" npm run build)
+
+APP_URL="http://$HOST:$PORT"
+if [ "$HOST" = "0.0.0.0" ]; then
+  APP_URL="http://127.0.0.1:$PORT"
+fi
+
+open_when_ready() {
+  attempts=0
+  while [ "$attempts" -lt 100 ]; do
+    if command -v curl >/dev/null 2>&1 && curl -fsS "$APP_URL/health" >/dev/null 2>&1; then
+      case "$(uname -s)" in
+        Darwin) open "$APP_URL" >/dev/null 2>&1 || true ;;
+        Linux) xdg-open "$APP_URL" >/dev/null 2>&1 || "$BACKEND_ROOT/.venv/bin/python" -m webbrowser "$APP_URL" >/dev/null 2>&1 || true ;;
+        *) "$BACKEND_ROOT/.venv/bin/python" -m webbrowser "$APP_URL" >/dev/null 2>&1 || true ;;
+      esac
+      return
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.2
+  done
+}
+
+if [ "$OPEN_BROWSER" = "yes" ]; then
+  open_when_ready &
+fi
+
+printf '\nKeep Up Literature is starting at %s\n' "$APP_URL"
+printf '%s\n\n' "Press Ctrl-C to stop. Your work is stored in SQLite and restored on the next run."
+
+set -- "$BACKEND_ROOT/.venv/bin/python" -m uvicorn app.main:app --app-dir "$BACKEND_ROOT" --host "$HOST" --port "$PORT"
+if [ "$RELOAD" = "yes" ]; then
+  set -- "$@" --reload
+fi
+exec "$@"

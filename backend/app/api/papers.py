@@ -16,15 +16,15 @@ def update_paper_status(
 ) -> PaperRead:
     repository = PaperRepository(db)
     paper = repository.get(paper_id)
-    if paper is None:
+    if paper is None or paper.discarded_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found.")
-    return repository.set_read_status(paper, payload.is_read)
+    return repository.update(paper, payload.model_dump(exclude_unset=True))
 
 
 @router.delete("/{paper_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_paper(paper_id: int, db: Session = Depends(get_db)) -> None:
     repository = PaperRepository(db)
     paper = repository.get(paper_id)
-    if paper is None:
+    if paper is None or paper.discarded_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paper not found.")
     repository.delete(paper)
